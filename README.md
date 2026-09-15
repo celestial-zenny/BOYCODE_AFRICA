@@ -1,15 +1,18 @@
-# BoyCode — Cybersecurity Journey
+# BoyCode Africa — security learning log
 
-A collection of hands-on security practice: lab walkthroughs, exploitation
-write-ups, and notes from working through vulnerable-by-design environments.
+This is where I keep track of the hands-on security stuff I'm working through:
+labs I've broken into on purpose, commands I'm still drilling into muscle memory,
+and notes for whoever reads this later (probably future me).
 
-> All work is done in isolated lab environments against systems I own or am
-> explicitly authorised to test.
+Everything here happens in throwaway lab setups on my own machine. None of it is
+pointed at anything I don't own.
 
-## Labs & Documentation
+## What's in here
 
-- **[DVWA — Command Injection](Command-Injection/README.md)** — step-by-step
-  exploitation of the DVWA Command Injection module across Low, Medium, and High
-  security levels, including the filter bypasses and remediation.
-- **[Honeypot & command practice](boycode/)** — screenshots from earlier
-  terminal and honeypot exercises.
+- **[Command Injection on DVWA](Command-Injection/)** — I took DVWA's command
+  injection challenge from Low all the way up to High and wrote up exactly how
+  each level falls apart. The most complete write-up in here so far.
+- **[boycode/](boycode/)** — screenshots from my earlier terminal and honeypot
+  practice. Rougher around the edges, but it's where this started.
+
+More gets added as I learn it.

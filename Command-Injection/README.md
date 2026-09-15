@@ -1,105 +1,116 @@
-# DVWA: Command Injection Walkthrough
+# Command Injection on DVWA
 
-A step-by-step exploitation of the **Command Injection** module in
-[DVWA](https://github.com/digininja/DVWA) (Damn Vulnerable Web Application),
-from spinning up the lab in Docker through defeating the **Low**, **Medium**,
-and **High** security levels.
+I'd read about command injection plenty of times, but reading about it and
+actually watching a machine hand you its password file because you typed one
+semicolon are two very different things. So I fired up DVWA and worked through
+the Command Injection module properly — from the Low setting all the way up to
+High. This is how it went.
 
-> ⚠️ **Lab use only.** DVWA is intentionally vulnerable software running on my
-> own machine, bound to `127.0.0.1`. Only ever test systems you own or are
-> explicitly authorised to test.
+> This all runs in a throwaway lab on my own machine. DVWA is *made* to be broken
+> into — please don't try any of this against anything you don't own.
 
----
+## Getting it running
 
-## Lab Setup
-
-DVWA was run locally with Docker, published to loopback only so nothing is
-exposed to the network:
+I ran DVWA in Docker and kept it bound to localhost only:
 
 ```bash
 docker run --rm -p 127.0.0.1:8080:80 vulnerables/web-dvwa
 ```
 
-[![Pulling and starting the DVWA container](DVWA_SCREENSHOTS/01-docker-run.png)](DVWA_SCREENSHOTS/01-docker-run.png)
+First go I actually fumbled it — left off the `docker run` part and bash just
+went `--rm: command not found`. You can spot it in the screenshot. Leaving it in
+because that's honestly how it happened.
 
-The container brings up MariaDB and Apache:
+![Pulling the DVWA image in the terminal](screenshots/01-docker-run.png)
 
-[![MariaDB and Apache started](DVWA_SCREENSHOTS/02-container-up.png)](DVWA_SCREENSHOTS/02-container-up.png)
+Once the image finished pulling, the container brought up MariaDB and Apache:
 
-Logged in at `http://localhost:8080/login.php` with the default credentials
-**admin / password**:
+![MariaDB and Apache starting up](screenshots/02-container-up.png)
 
-[![DVWA login page](DVWA_SCREENSHOTS/03-login.png)](DVWA_SCREENSHOTS/03-login.png)
+Then I logged in with the default `admin` / `password`:
 
-Then initialised the database from **Setup / Reset DB** (the Setup Check
-confirms PHP, MySQL, and the modules are ready):
+![DVWA login screen](screenshots/03-login.png)
 
-[![DVWA database setup check](DVWA_SCREENSHOTS/04-setup-check.png)](DVWA_SCREENSHOTS/04-setup-check.png)
+…and reset the database from **Setup / Reset DB** so I was starting from a clean
+slate:
 
----
+![DVWA setup and database check page](screenshots/04-setup-check.png)
 
-## Objective
+## The target
 
-The **Command Injection** module offers a *"Ping a device"* form that takes an
-IP address and runs it through a shell `ping` command. The goal is to break out
-of the intended command and run **arbitrary OS commands** on the host — at each
-of the three security levels.
+The module gives you a little **"Ping a device"** box. You hand it an IP, the
+server runs `ping` on it, and shows you the output. So the whole challenge is
+really one question: can I get it to run something that *isn't* ping? Short
+answer — yes, and in three different ways depending on how hard each level tried
+to stop me.
 
----
+## Low — no lock on the door
 
-## Exploit Breakdown
+Low has basically no filtering. Whatever I type gets tacked straight onto the
+ping command, so I just tacked on a second command of my own:
 
-### 1. Low Security
+```
+127.0.0.1 ; cat /etc/passwd
+```
 
-- **Vulnerability:** No input validation at all. Whatever you type in the `ip`
-  field is concatenated straight into a shell command.
-- **Payload:** `127.0.0.1 ; cat /etc/passwd`
-- **Result:** The `;` terminates the `ping` and chains a second command. The app
-  happily returns the full contents of `/etc/passwd`.
+The `;` ends the ping and kicks off my `cat`. And there it was — the whole
+`/etc/passwd`:
 
-[![Low security command injection dumping /etc/passwd](DVWA_SCREENSHOTS/05-low-cat-passwd.png)](DVWA_SCREENSHOTS/05-low-cat-passwd.png)
+![Low level dumping /etc/passwd](screenshots/05-low-cat-passwd.png)
 
-### 2. Medium Security
+Seeing it actually work the first time is a weird little "wait, that's genuinely
+it?" moment.
 
-- **Vulnerability:** A weak blacklist. The code strips `;` and `&&` from the
-  input — but forgets the pipe (`|`), so command chaining still works.
-- **Payload:** `127.0.0.1 | whoami`
-- **Result:** The pipe survives the filter and executes. The response returns
-  `www-data`, confirming command execution as the Apache web-server user.
+## Medium — they tried
 
-[![Medium security command injection returning www-data](DVWA_SCREENSHOTS/06-medium-whoami.png)](DVWA_SCREENSHOTS/06-medium-whoami.png)
+Medium actually puts up a fight. It strips out `;` and `&&`, so the semicolon
+trick dies here. But it completely forgot about the pipe. So instead of chaining
+with a semicolon, I piped:
 
-### 3. High Security
+```
+127.0.0.1 | whoami
+```
 
-- **Vulnerability:** A stricter blacklist that removes `&`, `;`, `-`, `$`, `(`,
-  `)`, backticks, `||`, and `"| "` — a pipe **followed by a space**. The bug is
-  that a pipe with *no* trailing space slips right through.
-- **Payload:** `127.0.0.1|cat /etc/passwd`  *(note: no space after the `|`)*
-- **Result:** The spaceless pipe evades the filter and `/etc/passwd` is dumped
-  again — even at High.
+It came straight back with `www-data` — the user Apache runs as. So it ran my
+command *and* told me exactly who I am on the box:
 
-First switch the security level to **High**:
+![Medium level returning www-data](screenshots/06-medium-whoami.png)
 
-[![DVWA security level set to High](DVWA_SCREENSHOTS/07-security-high.png)](DVWA_SCREENSHOTS/07-security-high.png)
+## High — closer, still not enough
 
-Then submit the spaceless payload:
+High has a much longer blacklist, and this time it does go after the pipe — but
+only `"| "`, a pipe with a *space* after it. So I just… took the space out.
 
-[![High security command injection dumping /etc/passwd](DVWA_SCREENSHOTS/08-high-cat-passwd.png)](DVWA_SCREENSHOTS/08-high-cat-passwd.png)
+First I flipped the security level over to High:
 
----
+![Setting DVWA security level to High](screenshots/07-security-high.png)
 
-## Key Takeaway
+Then sent the pipe with nothing after it:
 
-Every level here fell to the same idea: **blacklisting characters is a losing
-game.** Low had no filter, Medium forgot the pipe, and High forgot that a pipe
-doesn't need a trailing space. There is always one more separator the blacklist
-missed.
+```
+127.0.0.1|cat /etc/passwd
+```
 
-Proper remediation:
+And `/etc/passwd` came pouring out again — on the setting that's supposed to be
+the hard one:
 
-- **Whitelist, don't blacklist.** Validate the input against a strict allowlist —
-  for a ping field, only accept a well-formed IP address and reject everything else.
-- **Don't hand user input to a shell.** Avoid `shell_exec()`, `system()`,
-  `exec()`, etc. Use language-native networking libraries instead of shelling out.
-- **If a shell call is unavoidable,** use parameterised execution and escape/validate
-  every argument — never string-concatenate user input into a command.
+![High level dumping /etc/passwd](screenshots/08-high-cat-passwd.png)
+
+## What I took from it
+
+The pattern that jumped out at me: every level tried to stop me by banning
+*characters*, and every single one lost. Ban `;`, I use `|`. Ban `| `, I drop
+the space. There's always one more separator they didn't think of — blacklisting
+is whack-a-mole, and the attacker gets the last mole.
+
+If I were the one fixing this, I'd:
+
+- only accept input that actually looks like an IP address and bin the rest —
+  decide what's *allowed* instead of trying to list everything that's banned
+- stop feeding user input into the shell at all, and use the language's own
+  networking libraries instead of `shell_exec()` / `system()`
+- and if I really had no choice but to shell out, pass the arguments across
+  safely instead of gluing a command string together by hand
+
+Next thing I want to try here is going past just reading files — seeing if I can
+turn this into an actual shell back to my machine.
